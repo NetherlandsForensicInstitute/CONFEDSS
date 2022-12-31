@@ -18,8 +18,8 @@ PAGE_SZ = 0x1000
 
 class GhidraEmu(object):
     _uc_arch_translation = {
-        'ARM': 'arm',
-        'AARCH64': 'arm64'
+        'ARM': QL_ARCH.ARM,
+        'AARCH64': QL_ARCH.ARM64,
     }
 
     def __init__(self, entry_point=None, hooks=None, mappings=None, snapshot=None):
@@ -62,14 +62,30 @@ class GhidraEmu(object):
         else:
             self.entry_point = entry_point
 
-        blk_code = self.ghidra.ns.currentProgram.memory.getBlock(self.ghidra._jaddr(self.entry_point))
+        # Get the block that needs to be executed
+        blk_code = self.ghidra.ns.currentProgram.memory.getBlock(
+            self.ghidra._jaddr(self.entry_point)
+        )
         self.code_size = blk_code.size
 
-        self.ql = Qiling(code=self.ghidra.read_mem_block(blk_code, chunk_size=128*1024),
-                         archtype=self._uc_arch_translation[self.arch.isr],
-                         ostype='linux',
-                         verbose=QL_VERBOSE.DEFAULT
-                         )
+        code = self.ghidra.read_mem_block(blk_code, chunk_size=128*1024)
+        if code == b"":
+            raise ValueError(
+                f"No data found in block containing entry point {self.entry_point:08x}"
+            )
+
+        # TODO: Make this Ghidra -> Qiling arch conversion more generic
+        if self.arch.isr == "ARM" and self.arch.version == "Cortex":
+            qiling_arch = QL_ARCH.CORTEX_M
+        else:
+            qiling_arch = self._uc_arch_translation[self.arch.isr]
+
+        self.ql = qiling.Qiling(
+            code=code,
+            archtype=qiling_arch,
+            ostype='linux',
+            verbose=QL_VERBOSE.DEFAULT,
+        )
 
         while self.ql.mem.map_info:
             self.ql.mem.unmap_all()
