@@ -10,8 +10,8 @@ class AttrDict(dict):
         self.__dict__ = self
 
 class Endianness(Enum):
-        LE = 'little'
-        BE = 'big'
+    LE = 'little'
+    BE = 'big'
 
 _nt_arch_params = _nt('ArchParams', 'isr endianness bits version')
 
@@ -26,7 +26,6 @@ class Ghidra:
         self.function_mgr = self.ns.currentProgram.getFunctionManager()
         self.symbol_manager = self.ns.currentProgram.getSymbolTable()
         self.arch = self.get_arch()
-        self._reg_tmode = self.ns.currentProgram.getLanguage().getRegister('tmode') if self.arch.isr in ['ARM', 'AARCH64'] and self.arch.bits == 32 else None
 
     def _jaddr(self, addr):
         return self.ns.toAddr(addr)
@@ -67,12 +66,9 @@ class Ghidra:
         return b_data.read()
 
     def is_thumb(self, addr):
-        if self._reg_tmode:
-            tmode_val = self.ns.currentProgram.programContext.getRegisterValue(self._reg_tmode, self.ns.toAddr(addr))
+        if self.arch.isr in ['ARM', 'AARCH64'] and self.arch.bits == 32:
+            _reg_tmode = self.ns.currentProgram.getRegister("TMode")
+            tmode_val = self.ns.currentProgram.programContext.getRegisterValue(_reg_tmode, self.ns.toAddr(addr))
             return bool(tmode_val.unsignedValueIgnoreMask)
         else:
             return False
-
-
-
-
