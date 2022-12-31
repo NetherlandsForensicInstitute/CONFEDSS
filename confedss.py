@@ -68,17 +68,17 @@ class GhidraEmu(object):
             self.load_ghidra_mem_segments()
             if mappings:
                 self.load_extra_mappings(mappings)
-        
+
         # Map some mem for the stack
         if max([ x[1] for x in self.ql.mem.map_info ]) < 0x7f000000:
             self.ql.mem.map(0x7f000000, 0xf00000, info='stack')
         else:
             self.ql.mem.map(max([ x[1] for x in self.ql.mem.map_info ]), 0xf00000)
-        
+
         # Give the stack enough room on both sides
         self.ql.arch.regs.sp = max([ x[1] for x in self.ql.mem.map_info ]) - 0x10000
         self.ql.map_region = self.map_region
-        
+
         # Load Python file containing Qiling hooks
         self.ql.entry_point = self.entry_point
         if self.f_hooks:
@@ -89,26 +89,20 @@ class GhidraEmu(object):
 
         self.ql.debugger = True
         self.ql.arch.regs.sp = 0x7fe00000
+
         if self.ghidra.is_thumb(self.entry_point):
             # Set CPU to Thumb
             self.ql.arch.regs.cpsr |= (1<<5)
             self.ql.hook_address(self.hook_start_thumb, self.entry_point)
+
         self.ql._targetname = self.ghidra.ns.currentProgram.name
         self.ql._path = self.ghidra.ns.currentProgram.name
         self.ql.argv[0] = self.ghidra.ns.currentProgram.name
         self.start()
 
-
     def start(self):
         self.ql.os.entry_point = self.entry_point
         self.ql.run(begin=self.entry_point)
-
-    def _limit_exit_point(self, ql, address, size):
-        if ql.arch.regs.pc == self.entry_point:
-            ql.remote_debug.gdb.exit_point -= 1
-
-    def _pad_to_page_size(self, size):
-        return size + (0x1000 - ((size) % 0x1000)) if size % 0x1000 else size
 
     def load_ghidra_mem_segments(self):
         for segment in self.ghidra.ns.currentProgram.memory.blocks:
@@ -199,7 +193,7 @@ class GhidraEmu(object):
             logging.debug('Mapping region for {} at 0x{:02x} (size: {:02x})'.format(offset, size))
             self.map_region(offset, size)
 
-if __name__ == '__main__':
+def main():
     args = ArgumentParser()
     args.add_argument('--entry_point', help='The entry point to start execution', default=False)
     args.add_argument('--hooks', help='The python file containing the hooks for the emulator', default=False)
@@ -215,7 +209,10 @@ if __name__ == '__main__':
         entry_point = False
 
     if args.mappings:
-        with open(args.mappings, 'r') as f_mappings:
+        with open(args.mappings, 'r', encoding='utf-8') as f_mappings:
             args.mappings = json.load(f_mappings)
 
-    emu = GhidraEmu(**vars(args))
+    GhidraEmu(**vars(args))
+
+if __name__ == '__main__':
+    main()
