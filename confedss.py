@@ -136,23 +136,41 @@ class GhidraEmu(object):
             raise unicorn_error
 
     def load_ghidra_mem_segments(self):
-        for segment in self.ghidra.ns.currentProgram.memory.blocks:
-            start = segment.getStart().offset
-            end = segment.getEnd().offset
-            size = segment.getSize()
-            map_size = size + (0x1000 - ((size) % 0x1000)) if size % 0x1000 else size
+        # Calculate the starts and sizes of the memory blocks in Ghidra to reduce
+        # the performance overhead of the ghidra bridge
+        block_positions = self.ghidra.bridge.remote_eval(
+            "[(seg.name, seg.getStart().getOffset(), seg.getSize(), seg.getPermissions(), seg.getData() if seg.isInitialized() else None) for seg in currentProgram.memory.blocks]"
+        )
 
-            logging.info('Mapping segment {} at 0x{:02x} with size 0x{:02x} (Map size 0x{:02x})'.format(
-                segment.name,
-                start,
-                size,
-                map_size))
+        for seg_name, start, size, perms, data in block_positions:
+            if data is None and not seg_name.startswith('imem:'):
+                continue
 
-            # TODO Make a pull request for the ret-sync Ghidra implementation to recognize the right segment name
-            # If the segment contains our entrypoint use the name of the program for it, this makes retsync recognize it for now
-            self.map_region(start, map_size, name=segment.name if self.entry_point not in range(start, end) else self.ghidra.ns.currentProgram.name)
-            if segment.isInitialized():
-                self.ql.mem.write(start, self.ghidra.read_mem_block(segment))
+            if data is not None:
+                datas = [(start, self.ql.mem.align_up(size, PAGE_SZ), data)]
+            else:
+                datas = []
+
+            # Make sure the permissions are set properly
+            # See: https://ghidra.re/ghidra_docs/api/ghidra/program/model/mem/MemoryBlock.html
+            uc_perms = \
+                (unicorn.UC_PROT_READ if perms & 1 else 0) | \
+                (unicorn.UC_PROT_WRITE if perms & 2 else 0) | \
+                (unicorn.UC_PROT_EXEC if perms & 4 else 0)
+
+            assert not perms & 8, "Attempting to write volatile Ghidra memory region to non-volatile Qiling segment."
+
+            # TODO: Make a pull request for the ret-sync Ghidra implementation
+            # to recognize the right segment name.
+            # If the segment contains our entrypoint use the name of the program
+            # for it, this makes retsync recognize it for now.
+            if start <= self.entry_point < end:
+                seg_name = self.ghidra.ns.currentProgram.name
+
+            self.map_region(start, size, perms=perms, name=seg_name)
+
+            for data_start, data_size, data in datas:
+                self.ql.mem.write(data_start, self.ghidra.read_mem_data(data, data_size))
 
     def map_region(self, offset, size, perms=unicorn.UC_PROT_ALL, name=None):
         # Align the offset and size to the page size, and try to map that.

@@ -54,9 +54,10 @@ class Ghidra:
         return bytes(map(ord, jarray.tostring()))
 
     def read_mem_block(self, blk, chunk_size=128*1024):
-        h_data = blk.getData()
+        return self.read_mem_data(blk.getData(), blk.getSize(), chunk_size)
+
+    def read_mem_data(self, h_data, sz, chunk_size=128*1024):
         b_data = BytesIO()
-        sz = blk.getSize()
         p = tqdm(total=sz, unit_scale=1, unit=' bytes')
         for _ in range(0, sz, chunk_size):
             b_data.write(self._jarray2bytes(h_data.readNBytes(chunk_size)))
