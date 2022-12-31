@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 from enum import Enum
 import importlib.util
 import logging
+import unicorn
 import pickle
 import json
 import os
@@ -102,7 +103,25 @@ class GhidraEmu(object):
 
     def start(self):
         self.ql.os.entry_point = self.entry_point
-        self.ql.run(begin=self.entry_point)
+
+        try:
+            self.ql.run(begin=self.entry_point)
+
+        except unicorn.UcError as unicorn_error:
+            # If Qiling encouters an exception while running an error handler
+            # (for example for an unmapped read), Qiling saves the exception in
+            # an internal field and tries to close unicorn. However, unicorn sees
+            # that it still has an error (in the example an unmapped read error)
+            # and raises an exception for that error.
+
+            # Qiling does not catch this exception, so we should.
+            internal_exception = self.ql.internal_exception
+            if internal_exception is not None:
+                raise internal_exception from unicorn_error  # pylint: disable=raising-bad-type
+
+            print(f"[!] ERROR IN UNICORN")
+            print(f"[i] pc: {self.ql.arch.regs.arch_pc:08x} lr: {self.ql.arch.regs.lr:08x}")
+            raise unicorn_error
 
     def load_ghidra_mem_segments(self):
         for segment in self.ghidra.ns.currentProgram.memory.blocks:
