@@ -121,8 +121,8 @@ class GhidraEmu(object):
 
         if self.ghidra.is_thumb(self.entry_point):
             # Set CPU to Thumb
-            self.ql.arch.regs.cpsr |= (1<<5)
-            self.ql.hook_address(self.hook_start_thumb, self.entry_point)
+            self._hook_start_thumb(self.ql)
+            self.ql.hook_address(self._hook_start_thumb, self.entry_point)
 
         self.ql._targetname = self.ghidra.ns.currentProgram.name
         self.ql._path = self.ghidra.ns.currentProgram.name
@@ -233,8 +233,9 @@ class GhidraEmu(object):
         for (start, _), data in zip(intersect_maps, intersect_data):
             self.ql.mem.write(start, bytes(data))
 
-    def hook_start_thumb(self, ql):
-        ql.arch.regs.cpsr |= (1<<5)
+    @staticmethod
+    def _hook_start_thumb(qiling_instance):
+        qiling_instance.arch.regs.cpsr |= 1 << 5
 
     def load_extra_mappings(self, mappings):
         for offset,size in mappings.items():
