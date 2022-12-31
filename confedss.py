@@ -22,7 +22,7 @@ class GhidraEmu(object):
         'AARCH64': 'arm64'
     }
 
-    def __init__(self, entry_point=False, hooks=None, mappings=None, snapshot=None):
+    def __init__(self, entry_point=None, hooks=None, mappings=None, snapshot=None):
         self.ghidra = Ghidra()
         self.ghidra.bridge.client.response_timeout = 10
         self.arch = self.ghidra.get_arch()
@@ -32,18 +32,33 @@ class GhidraEmu(object):
         self.logger.addHandler(logging.StreamHandler())
         self.f_hooks = hooks
 
-        if not entry_point:
-            f_entry = self.ghidra.symbol_manager.getLabelOrFunctionSymbols('_start', None)
-            if not f_entry:
-                f_entry = self.ghidra.symbol_manager.getLabelOrFunctionSymbols('_entry', None)
-            if not f_entry:
-                logging.debug(
-                    f'No function named _start or _entry found, using current cursor offset ({hex(self.ghidra.cursor)})')
-                self.entry_point = self.ghidra.cursor
+        if entry_point is None or isinstance(entry_point, str):
+            for name in (entry_point, "_start", "_entry"):
+                if name is None:
+                    continue
+
+                f_entry = self.ghidra.symbol_manager.getLabelOrFunctionSymbols(name, None)
+                if f_entry:
+                    f_entry = f_entry[0]
+                    self.entry_point = f_entry.getProgramLocation().address.offset
+                    logging.debug(
+                        'Function %s found! Using entry point %08x',
+                        f_entry.name, self.entry_point
+                    )
+                    break
             else:
-                f_entry = f_entry[0]
-                self.entry_point = f_entry.getProgramLocation().address.offset
-                logging.debug(f'Function {f_entry.name} found! Using entry point {hex(self.entry_point)}')
+                if entry_point is None:
+                    logging.debug(
+                        'No function named _start or _entry found, using current '
+                        'cursor offset (%08x)', self.ghidra.cursor
+                    )
+                else:
+                    logging.debug(
+                        'No function named %s, _start or _entry found, using '
+                        'current cursor (%08x)', entry_point, self.ghidra.cursor
+                    )
+
+                self.entry_point = self.ghidra.cursor
         else:
             self.entry_point = entry_point
 
@@ -194,18 +209,12 @@ class GhidraEmu(object):
 
 def main():
     args = ArgumentParser()
-    args.add_argument('--entry_point', help='The entry point to start execution', default=False)
+    args.add_argument('--entry_point', help='The entry point to start execution', default=None)
     args.add_argument('--hooks', help='The python file containing the hooks for the emulator', default=False)
     args.add_argument('--mappings', help='Extra memory mappings in JSON dict format', default=False)
     args.add_argument('--snapshot', help='A snapshot containing a previous state for the emulator',
                       default=None)
     args = args.parse_args()
-
-    # Entry point can be 0
-    if args.entry_point != False:
-        entry_point = int(args.entry_point, 16)
-    else:
-        entry_point = False
 
     if args.mappings:
         with open(args.mappings, 'r', encoding='utf-8') as f_mappings:
