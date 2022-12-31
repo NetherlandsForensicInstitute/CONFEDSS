@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 
-from qiling.exception import QlMemoryMappedError
-from qiling.const import *
-from qiling import Qiling
-from ghidra_connect import Ghidra
-from collections import namedtuple as _nt
 from argparse import ArgumentParser
-from enum import Enum
 import importlib.util
 import logging
-import unicorn
 import pickle
 import json
 import os
+
+import unicorn
+from qiling.const import QL_ARCH, QL_VERBOSE
+import qiling
+
+from ghidra_connect import Ghidra
 
 PAGE_SZ = 0x1000
 
