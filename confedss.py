@@ -142,67 +142,50 @@ class GhidraEmu(object):
             if segment.isInitialized():
                 self.ql.mem.write(start, self.ghidra.read_mem_block(segment))
 
-    def map_region(self, offset, size, name=None):
-        try:
-            self.ql.mem.map(offset, size, info=name)
-        except QlMemoryMappedError:
-            self._map_region(offset, size, name)
+    def map_region(self, offset, size, perms=unicorn.UC_PROT_ALL, name=None):
+        # Align the offset and size to the page size, and try to map that.
+        aligned_offset = self.ql.mem.align(offset, PAGE_SZ)
+        size = self.ql.mem.align_up(size + offset - aligned_offset, PAGE_SZ)
+        offset = aligned_offset
 
+        if self.ql.mem.is_available(offset, size):
+            self.ql.mem.map(offset, size, perms, info=name)
+            return
 
-    def _map_region(self, offset, size, name=None):
-        if offset % PAGE_SZ:
-            size += offset - (offset // PAGE_SZ) * PAGE_SZ
-            offset = (offset // PAGE_SZ) * PAGE_SZ
+        # The requested region apparently overlaps with an existing region, we
+        # need to merge this with an existing block.
+        cur_begin = offset
+        cur_end = offset + size
+        cur_perms = perms
 
-        if size % PAGE_SZ:
-            size = (-(-size // PAGE_SZ)) * PAGE_SZ
-
-        for blk in range(offset, offset + size, PAGE_SZ):
-            d_start = None
-            d_end = None
-            b_start = None
-            b_end = None
-            b_allocated = False
-
-            for start, end, perms, info, is_mmio in self.ql.mem.map_info:
-                if blk == start or (blk >= start and blk + PAGE_SZ <= end + 1):
-                    b_allocated = True
-                elif blk == end:
-                    b_start = (start, end - start)
-
-                elif blk + PAGE_SZ == start:
-                    b_end = (start, end - start)
-
-            if b_start and b_end:
-                if self.ql.mem.read(*b_start) != b'\00'*b_start[1]:
-                    d_start = bytes(self.ql.mem.read(*b_start))
-                self.ql.mem.unmap(*b_start)
-                if self.ql.mem.read(*b_end) != b'\00'*b_end[1]:
-                    d_end = bytes(self.ql.mem.read(*b_end))
-                self.ql.mem.unmap(*b_end)
-                self.ql.mem.map(b_start[0], (b_end[0] + b_end[1]) - b_start[0], info=name)
-                if d_start:
-                    self.ql.mem.write(b_start[0], d_start)
-                if d_end:
-                    self.ql.mem.write(b_end[0], d_end)
-            elif b_start:
-                if self.ql.mem.read(*b_start) != b'\00'*b_start[1]:
-                    d_start = bytes(self.ql.mem.read(*b_start))
-                self.ql.mem.unmap(*b_start)
-                self.ql.mem.map(b_start[0], (blk + PAGE_SZ) - b_start[0], info=name)
-                if d_start:
-                    self.ql.mem.write(b_start[0], d_start)
-            elif b_end:
-                if self.ql.mem.read(*b_end) != b'\00'*b_end[1]:
-                    d_end = bytes(self.ql.mem.read(*b_end))
-                self.ql.mem.unmap(*b_end)
-                self.ql.mem.map(blk, (b_end[0] + b_end[1]) - blk, info=name)
-                if d_end:
-                    self.ql.mem.write(b_end[0], d_end)
-            elif b_allocated:
+        # 1. Find out which chunks(s) to merge this with
+        intersect_maps = []
+        intersect_data = []
+        for begin, end, perms, *_ in self.ql.mem.map_info:
+            # Check if this map entry intersects with (begin, end)
+            if not ((begin <= cur_begin < end) or (begin < cur_end <= end) or (cur_begin <= begin < end <= cur_end)):
                 continue
-            else:
-                self.ql.mem.map(blk, PAGE_SZ, info=name)
+
+            cur_perms |= perms
+
+            # There is an intersection
+            intersect_maps.append((begin, end))
+            intersect_data.append(self.ql.mem.read(begin, end - begin))
+
+        # 2. Unmap those
+        for begin, end in intersect_maps:
+            self.ql.mem.unmap(begin, end - begin)
+
+        # 3. Remap bigger chunk
+        # TODO: Don't throw away the names
+        first_addr = min(min(begin for begin, _ in intersect_maps), cur_begin)
+        last_addr = max(max(end for _, end in intersect_maps), cur_end)
+
+        self.ql.mem.map(first_addr, last_addr - first_addr, perms=perms)
+
+        # 4. Rewrite unmapped data
+        for (start, _), data in zip(intersect_maps, intersect_data):
+            self.ql.mem.write(start, bytes(data))
 
     def hook_start_thumb(self, ql):
         ql.arch.regs.cpsr |= (1<<5)
