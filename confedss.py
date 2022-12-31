@@ -16,7 +16,7 @@ import os
 
 PAGE_SZ = 0x1000
 
-class GhidraEmu(object):
+class GhidraEmu:
     _uc_arch_translation = {
         'ARM': QL_ARCH.ARM,
         'AARCH64': QL_ARCH.ARM64,
@@ -117,7 +117,6 @@ class GhidraEmu(object):
             self.hooks_module.insert_hooks(self.ql, self.ghidra)
 
         self.ql.debugger = True
-        self.ql.arch.regs.sp = 0x7fe00000
 
         if self.ghidra.is_thumb(self.entry_point):
             # Set CPU to Thumb
@@ -238,8 +237,10 @@ class GhidraEmu(object):
         qiling_instance.arch.regs.cpsr |= 1 << 5
 
     def load_extra_mappings(self, mappings):
-        for offset,size in mappings.items():
-            logging.debug('Mapping region for {} at 0x{:02x} (size: {:02x})'.format(offset, size))
+        for offset, size in mappings.items():
+            # TODO: Find a way to figure out the name of the region, or adjust
+            # the logging entry
+            logging.debug(f'Mapping region for ?? at 0x{offset:02x} (size: 0x{size:02x})')
             self.map_region(offset, size)
 
 def main():
