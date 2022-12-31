@@ -22,9 +22,6 @@ class GhidraEmu(object):
         'AARCH64': 'arm64'
     }
 
-    extra_mappings = {}
-    breakpoints = []
-
     def __init__(self, entry_point=False, hooks=None, mappings=None, snapshot=None):
         self.ghidra = Ghidra()
         self.ghidra.bridge.client.response_timeout = 10
