@@ -1,3 +1,4 @@
+angr==9.2.1
 capstone==5.0.0
 dill==0.3.6
 enum-compat==0.0.3
@@ -15,6 +16,5 @@ PyYAML==6.0
 qiling==1.4.4
 tqdm==4.64.1
 unicodecsv==0.14.1
-unicorn==2.0.1.post1
 zope.event==4.5.0
 zope.interface==5.5.2
